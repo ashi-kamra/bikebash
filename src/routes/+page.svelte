@@ -5,6 +5,9 @@
     import * as d3 from "d3";
 
     let stations = [];
+    let trips = [];
+    let departures = new Map();
+    let arrivals = new Map();
     let map;
     let mapViewChanged = 0;
     mapboxgl.accessToken = "pk.eyJ1IjoiYWthbXJhMTE4IiwiYSI6ImNtOTRrbHg3aTB6MWMyanB5bmh3c2dwMmYifQ.AUIoUyEPsIoAgVXIIIjmdg";
@@ -46,13 +49,13 @@
                 "line-color": "#56a832",
                 "line-width": 0.8,
                 "line-opacity": 0.5
-                // paint params, e.g. colors, thickness, etc.
             },
         });
     }
 
     async function load_data(){
         stations = await d3.csv("https://vis-society.github.io/labs/8/data/bluebikes-stations.csv");
+        trips = await d3.csv("https://vis-society.github.io/labs/8/data/bluebikes-traffic-2024-03.csv");
     }
 
     function getCoords(station) {
@@ -61,13 +64,29 @@
         return {cx: x, cy: y};
     }
 
+    onMount(async () => {
+        await Promise.all([
+            load_data(),
+            load_map()
+        ]); //makes us wait till the data is loaded before moving onto to defining departures and arrivals
 
-    onMount(() => {
-        load_data();
-        load_map();
+        departures = d3.rollup(trips, v => v.length, d => d.start_station_id);
+        arrivals = d3.rollup(trips, v => v.length, d => d.end_station_id);
+        stations = stations.map(station => {
+            let id = station.Number;
+            station.arrivals = arrivals.get(id) ?? 0;
+            station.departures = departures.get(id) ?? 0;
+            station.totalTraffic = station.arrivals + station.departures;
+            return station;
+        });
     })
 
     $: map?.on("move", evt=> mapViewChanged++);
+    $: radiusScale = d3.scaleSqrt()
+        .domain([0, d3.max(stations, d => d.totalTraffic) || 0])
+        .range([0, 25]);
+
+    
 
 </script>
 
@@ -79,10 +98,15 @@
         {#each stations as station}
             {#key mapViewChanged}
                 <circle
-                    {...getCoords(station)}
-                    r="3"
+                    cx={getCoords(station).cx}
+                    cy={getCoords(station).cy}
+                    r={radiusScale(station.totalTraffic)}
                     fill="steelblue"
-                />
+                    fill-opacity=0.6
+                    stroke="white"
+                >
+                    <title>{station.totalTraffic} trips ({station.departures} departures, { station.arrivals} arrivals)</title>
+                </circle>
             {/key}
         {/each}
     </svg>
@@ -102,6 +126,10 @@
         width: 100%;
         height: 100%;
         pointer-events: none;
+    }
+
+    circle {
+        pointer-events: auto;
     }
 
 </style>
