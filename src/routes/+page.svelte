@@ -10,6 +10,9 @@
     let arrivals = new Map();
     let map;
     let mapViewChanged = 0;
+    const departuresByMinute = Array.from({length: 1440}, () => []);
+    const arrivalsByMinute = Array.from({length: 1440}, () => []);
+
     mapboxgl.accessToken = "pk.eyJ1IjoiYWthbXJhMTE4IiwiYSI6ImNtOTRrbHg3aTB6MWMyanB5bmh3c2dwMmYifQ.AUIoUyEPsIoAgVXIIIjmdg";
 
     async function load_map(){
@@ -59,9 +62,18 @@
             for (let trip of trips) {
                 trip.started_at = new Date(trip.started_at);
                 trip.ended_at = new Date(trip.ended_at);
+                let startedMinutes = minutesSinceMidnight(trip.started_at);
+                let endedMinutes = minutesSinceMidnight(trip.ended_at);
+
+                departuresByMinute[startedMinutes].push(trip);
+                arrivalsByMinute[endedMinutes].push(trip);
             }
             return trips;
         });
+       
+
+// TODO: Same for arrivals
+
     }
 
     function minutesSinceMidnight (date) {
@@ -100,15 +112,25 @@
     $: timeFilterLabel = new Date(0, 0, 0, 0, timeFilter)
                      .toLocaleString("en", {timeStyle: "short"});
 
-    $: filteredTrips = timeFilter === -1? trips : trips.filter(trip => {
-        let startedMinutes = minutesSinceMidnight(trip.started_at);
-        let endedMinutes = minutesSinceMidnight(trip.ended_at);
-        return Math.abs(startedMinutes - timeFilter) <= 60
-            || Math.abs(endedMinutes - timeFilter) <= 60;
-    });
-   
-    $: filteredDepartures = d3.rollup(filteredTrips, v => v.length, d => d.start_station_id);
-    $: filteredArrivals = d3.rollup(filteredTrips, v => v.length, d => d.end_station_id);
+    
+    function filterByMinute (tripsByMinute, minute) {
+        // Normalize both to the [0, 1439] range
+        // % is the remainder operator: https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Operators/Remainder
+        let minMinute = (minute - 60 + 1440) % 1440;
+        let maxMinute = (minute + 60) % 1440;
+
+        if (minMinute > maxMinute) {
+            let beforeMidnight = tripsByMinute.slice(minMinute);
+            let afterMidnight = tripsByMinute.slice(0, maxMinute);
+            return beforeMidnight.concat(afterMidnight).flat();
+        }
+        else {
+            return tripsByMinute.slice(minMinute, maxMinute).flat();
+        }
+    }
+    $: filteredDepartures = d3.rollup(filterByMinute(departuresByMinute, timeFilter), v => v.length, d => d.start_station_id);
+    $: filteredArrivals = d3.rollup(filterByMinute(arrivalsByMinute, timeFilter), v => v.length, d => d.end_station_id);
+
     $: filteredStations = stations.map(station => {
         const id = station.Number;
         const arr = filteredArrivals.get(id) ?? 0;
