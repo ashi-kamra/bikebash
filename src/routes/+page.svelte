@@ -143,6 +143,11 @@
         };
     });
 
+    //visualizing traffic flow
+    let stationFlow = d3.scaleQuantize()
+        .domain([0, 1])
+        .range([0, 0.5, 1]);
+
 
 </script>
 
@@ -168,6 +173,7 @@
 
 
 <div id="map">
+    
     <svg>
         {#each filteredStations as station}
             {#key mapViewChanged}
@@ -178,12 +184,18 @@
                     fill="steelblue"
                     fill-opacity=0.6
                     stroke="white"
+                    style="--departure-ratio: { stationFlow(station.departures / station.totalTraffic) }"
                 >
                     <title>{station.totalTraffic} trips ({station.departures} departures, { station.arrivals} arrivals)</title>
                 </circle>
             {/key}
         {/each}
     </svg>
+</div>
+<div class="legend">
+    <div id="departure" style="--departure-ratio: 1">More departures</div>
+    <div id="balanced" style="--departure-ratio: 0.5">Balanced</div>
+    <div id="arrivals" style="--departure-ratio: 0">More arrivals</div>
 </div>
 
 <style>
@@ -201,12 +213,6 @@
         height: 100%;
         pointer-events: none;
     }
-
-    circle {
-        pointer-events: auto;
-    }
-
-
     header {
         display: flex;
         gap: 1em;
@@ -219,6 +225,39 @@
 
     em {
         font-style: italic;
+    }
+
+
+    #map circle {
+        pointer-events: auto;
+        fill: var(--color);
+    }
+
+    .legend {
+        display: flex;
+        margin-block: 1em;
+        padding: 0;
+        width: 100%;
+        
+    }
+
+    .legend > div{
+        background-color: var(--color);
+        text-align: center;
+        color: white;
+        width: 100%;
+        border-style: solid;
+    }
+
+    #map circle, .legend > div {
+        --color-departures: steelblue;
+        --color-arrivals: darkorange;
+        --color: color-mix(
+            in oklch,
+            var(--color-departures) calc(100% * var(--departure-ratio)),
+            var(--color-arrivals)
+        ); 
+        
     }
 
   
