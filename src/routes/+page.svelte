@@ -55,7 +55,17 @@
 
     async function load_data(){
         stations = await d3.csv("https://vis-society.github.io/labs/8/data/bluebikes-stations.csv");
-        trips = await d3.csv("https://vis-society.github.io/labs/8/data/bluebikes-traffic-2024-03.csv");
+        trips = await d3.csv("https://vis-society.github.io/labs/8/data/bluebikes-traffic-2024-03.csv").then(trips => {
+            for (let trip of trips) {
+                trip.started_at = new Date(trip.started_at);
+                trip.ended_at = new Date(trip.ended_at);
+            }
+            return trips;
+        });
+    }
+
+    function minutesSinceMidnight (date) {
+        return date.getHours() * 60 + date.getMinutes();
     }
 
     function getCoords(station) {
@@ -84,12 +94,32 @@
     $: map?.on("move", evt=> mapViewChanged++);
     $: radiusScale = d3.scaleSqrt()
         .domain([0, d3.max(stations, d => d.totalTraffic) || 0])
-        .range([0, 25]);
+        .range(timeFilter === -1 ? [0, 25] : [3,30]);
 
-    
     let timeFilter = -1;
     $: timeFilterLabel = new Date(0, 0, 0, 0, timeFilter)
                      .toLocaleString("en", {timeStyle: "short"});
+
+    $: filteredTrips = timeFilter === -1? trips : trips.filter(trip => {
+        let startedMinutes = minutesSinceMidnight(trip.started_at);
+        let endedMinutes = minutesSinceMidnight(trip.ended_at);
+        return Math.abs(startedMinutes - timeFilter) <= 60
+            || Math.abs(endedMinutes - timeFilter) <= 60;
+    });
+   
+    $: filteredDepartures = d3.rollup(filteredTrips, v => v.length, d => d.start_station_id);
+    $: filteredArrivals = d3.rollup(filteredTrips, v => v.length, d => d.end_station_id);
+    $: filteredStations = stations.map(station => {
+        const id = station.Number;
+        const arr = filteredArrivals.get(id) ?? 0;
+        const dep = filteredDepartures.get(id) ?? 0;
+        return {
+            ...station,
+            arrivals: arr,
+            departures: dep,
+            totalTraffic: arr + dep
+        };
+    });
 
 
 </script>
@@ -117,7 +147,7 @@
 
 <div id="map">
     <svg>
-        {#each stations as station}
+        {#each filteredStations as station}
             {#key mapViewChanged}
                 <circle
                     cx={getCoords(station).cx}
