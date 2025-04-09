@@ -70,9 +70,6 @@
             }
             return trips;
         });
-       
-
-// TODO: Same for arrivals
 
     }
 
@@ -148,6 +145,60 @@
         .domain([0, 1])
         .range([0, 0.5, 1]);
 
+    //highlighting selected station
+    let selectedStation = null;
+
+    //adding isochrones
+    const urlBase = 'https://api.mapbox.com/isochrone/v1/mapbox/';
+    const profile = 'cycling';
+    const minutes = [5, 10, 15, 20];
+    const contourColors = [
+        "03045e",
+        "0077b6",
+        "00b4d8",
+        "90e0ef"
+    ]
+    let isochrone = null;
+
+    async function getIso(lon, lat) {
+        const base = `${urlBase}${profile}/${lon},${lat}`;
+        const params = new URLSearchParams({
+            contours_minutes: minutes.join(','),
+            contours_colors: contourColors.join(','),
+            polygons: 'true',
+            access_token: mapboxgl.accessToken
+        });
+        const url = `${base}?${params.toString()}`;
+
+        const query = await fetch(url, { method: 'GET' });
+        isochrone = await query.json();
+    }
+
+    getIso(-71.09415, 42.36027);
+
+    function geoJSONPolygonToPath(feature) {
+        const path = d3.path();
+        const rings = feature.geometry.coordinates;
+
+        for (const ring of rings) {
+            for (let i = 0; i < ring.length; i++) {
+                const [lng, lat] = ring[i];
+                const { x, y } = map.project([lng, lat]);
+                if (i === 0) path.moveTo(x, y);
+                else path.lineTo(x, y);
+            }
+            path.closePath();
+        }
+        return path.toString();
+    }
+
+    $: if (selectedStation) {
+        getIso(+selectedStation.Long, +selectedStation.Lat);
+    } else {
+        isochrone = null;
+    }
+
+
 
 </script>
 
@@ -175,8 +226,22 @@
 <div id="map">
     
     <svg>
-        {#each filteredStations as station}
-            {#key mapViewChanged}
+        {#key mapViewChanged}
+            {#if isochrone}
+                {#each isochrone.features as feature}
+                    <path
+                            d={geoJSONPolygonToPath(feature)}
+                            fill={feature.properties.fillColor}
+                            fill-opacity="0.2"
+                            stroke="#000000"
+                            stroke-opacity="0.5"
+                            stroke-width="1"
+                    >
+                        <title>{feature.properties.contour} minutes of biking</title>
+                    </path>
+                {/each}
+            {/if}
+            {#each filteredStations as station}
                 <circle
                     cx={getCoords(station).cx}
                     cy={getCoords(station).cy}
@@ -185,11 +250,14 @@
                     fill-opacity=0.6
                     stroke="white"
                     style="--departure-ratio: { stationFlow(station.departures / station.totalTraffic) }"
+                    class={station?.Number === selectedStation?.Number ? "selected" : ""}
+	                on:mousedown={() => selectedStation = selectedStation?.Number !== station?.Number ? station : null}
                 >
                     <title>{station.totalTraffic} trips ({station.departures} departures, { station.arrivals} arrivals)</title>
                 </circle>
-            {/key}
-        {/each}
+            
+            {/each}
+        {/key}
     </svg>
 </div>
 <div class="legend">
@@ -228,9 +296,15 @@
     }
 
 
-    #map circle {
+    #map svg circle {
         pointer-events: auto;
         fill: var(--color);
+        transition: opacity 0.2s ease;
+    }
+
+    /* Dimming effect when one circle is selected */
+    #map svg:has(circle.selected) circle:not(.selected) {
+        opacity: 0.3;
     }
 
     .legend {
